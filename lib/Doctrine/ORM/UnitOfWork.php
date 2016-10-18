@@ -2567,6 +2567,14 @@ class UnitOfWork implements PropertyChangedListener
         foreach ($data as $field => $value) {
             if (isset($class->fieldMappings[$field])) {
                 $class->reflFields[$field]->setValue($entity, $value);
+            } else if ($class->isSingleValuedAssociation($field)) {
+                $mapping = $class->associationMappings[$field];
+
+                if (isset($mapping['joinColumns'][1]) || is_object($value) || isset($mapping['id'])) {
+                    continue;
+                }
+
+                $class->reflFields[$field]->setValue($entity, $this->createEntity($mapping['targetEntity'], [$mapping['joinColumns'][0]['referencedColumnName'] => $value], $hints));
             }
         }
 

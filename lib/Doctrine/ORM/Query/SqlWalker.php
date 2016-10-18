@@ -1374,9 +1374,11 @@ class SqlWalker implements TreeWalker
                 if ($expr instanceof AST\PartialObjectExpression) {
                     $dqlAlias = $expr->identificationVariable;
                     $partialFieldSet = $expr->partialFieldSet;
+                    $isPartial = true;
                 } else {
                     $dqlAlias = $expr;
                     $partialFieldSet = array();
+                    $isPartial = false;
                 }
 
                 $queryComp   = $this->queryComponents[$dqlAlias];
@@ -1391,17 +1393,38 @@ class SqlWalker implements TreeWalker
                     );
                 }
 
+                if (true === $isPartial) {
+                    foreach ($partialFieldSet as $key => $property) {
+                        $partialFieldSet[$property] = $class->fieldMappings[$property] ?? $class->associationMappings[$property];
+                        unset($partialFieldSet[$key]);
+                    }
+
+                    $mapping = $partialFieldSet;
+                } else {
+                    $mapping = $class->fieldMappings;
+                }
+
                 $sqlParts = array();
 
                 // Select all fields from the queried class
-                foreach ($class->fieldMappings as $fieldName => $mapping) {
-                    if ($partialFieldSet && ! in_array($fieldName, $partialFieldSet)) {
-                        continue;
-                    }
-
+                foreach ($mapping as $fieldName => $mapping) {
                     $tableName = (isset($mapping['inherited']))
                         ? $this->em->getClassMetadata($mapping['inherited'])->getTableName()
                         : $class->getTableName();
+
+                    if (!isset($mapping['columnName'])) {
+                        if (isset($mapping['joinColumns'][1])) {
+                            continue;
+                        }
+
+                        $sqlTableAlias    = $this->getSQLTableAlias($tableName, $dqlAlias);
+                        $columnName = $mapping['joinColumns'][0]['name'];
+                        $columnAlias      = $this->getSQLColumnAlias($columnName);
+                        $sqlParts[] = $sqlTableAlias . '.' . $columnName . ' AS ' . $columnAlias;
+                        $this->scalarResultAliasMap[$resultAlias][] = $columnAlias;
+                        $this->rsm->addMetaResult($dqlAlias, $columnAlias, $fieldName, true);
+                        continue;
+                    }
 
                     $sqlTableAlias    = $this->getSQLTableAlias($tableName, $dqlAlias);
                     $columnAlias      = $this->getSQLColumnAlias($mapping['columnName']);
